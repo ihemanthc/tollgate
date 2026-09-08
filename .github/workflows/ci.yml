@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+
+      # CPU-only torch: the tests use tiny random models and never need CUDA, and the default
+      # Linux wheel would pull ~3 GB of CUDA libraries.
+      - name: Install
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu -e ".[all]" pytest ruff "nbformat>=5.11.1"
+
+      - name: Lint
+        run: |
+          uv run --no-sync ruff check .
+          uv run --no-sync ruff format --check .
+
+      - name: Notebooks match their generator
+        run: uv run --no-sync python scripts/make_notebook.py --check
+
+      - name: Test
+        run: uv run --no-sync pytest
