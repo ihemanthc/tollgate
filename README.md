@@ -21,9 +21,13 @@ Tollgate fine-tunes the [Laya](https://huggingface.co/convaiinnovations/laya) en
 
 The router produces calibrated probabilities over these tiers. A confidence threshold determines when Tollgate can safely serve a query at the predicted tier and when it should escalate to a more capable tier.
 
+<img width="1280" height="720" alt="1" src="https://github.com/user-attachments/assets/112ce0df-b2da-4ea6-bb43-dd9de2086217" />
+
+
 The project is designed around one objective:
 
 > **Reduce LLM inference cost while retaining acceptable answer quality.**
+
 
 ---
 
@@ -284,26 +288,6 @@ Seed sources include:
 - GSM8K
 - MMLU
 
-For each query:
-
-```text
-Seed prompt
-    |
-    v
-Local-small answer
-    |
-    v
-Mid-tier answer
-    |
-    v
-Frontier answer
-    |
-    v
-LLM judge
-    |
-    v
-Minimum sufficient tier
-```
 
 The dataset also records routing metadata and model cost information.
 
