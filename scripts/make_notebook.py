@@ -57,7 +57,7 @@ from datetime import UTC, datetime
 
 NOTEBOOK_STARTED = datetime.now(UTC)
 
-REPO_URL = "https://github.com/YOUR-USER/tollgate.git"  # where this repo is pushed
+REPO_URL = "https://github.com/ihemanthc/tollgate.git"  # public, so no GITHUB_TOKEN needed
 REPO_REF = "main"  # branch, tag or commit sha to install
 HF_REPO_DATA = "tollgate-routing-data"  # dataset repo `tollgate push-dataset` wrote
 HF_REPO_MODEL = "tollgate-router"  # model repo this run is pushed to (created private)
