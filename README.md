@@ -227,41 +227,11 @@ All predictions are produced in a single forward pass.
 
 Tollgate deliberately separates model fitting, calibration and final evaluation:
 
-```text
-TRAIN
-  |
-  |  fine-tune Laya
-  v
-CALIBRATION
-  |
-  |  fit temperatures
-  |  select threshold τ
-  v
-TEST
-  |
-  |  final metrics
-  v
-RESULTS
-```
-
 No test examples are used to fit temperatures or select the routing threshold.
 
 ### Temperature scaling
 
 For each Laya question type, Tollgate learns a temperature parameter.
-
-```text
-model logits
-     |
-     v
-divide by temperature
-     |
-     v
-softmax
-     |
-     v
-calibrated probabilities
-```
 
 The resulting probabilities are used by the routing policy.
 
