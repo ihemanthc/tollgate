@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from tollgate.collect.kaggle import kaggle_secret as kaggle_secret  # re-export for the notebook
 from tollgate.collect.publish import RestoreReport
 from tollgate.train.infer import load_logits
 from tollgate.train.train import BEST_DIR, LAST_DIR, LAYA_REPO, LAYA_REVISION, TrainResult
@@ -57,26 +58,6 @@ def gpu_info() -> GpuInfo:
         cuda=torch.version.cuda,
         expected=expected,
     )
-
-
-def kaggle_secret(name: str) -> str:
-    """A Kaggle notebook secret, with an error that says how to add it. Never printed."""
-    try:
-        from kaggle_secrets import UserSecretsClient  # only importable on Kaggle
-    except ImportError:
-        raise RuntimeError(
-            f"kaggle_secrets is not available, so {name} cannot be read: run this on Kaggle."
-        ) from None
-    try:
-        value = UserSecretsClient().get_secret(name)
-    except Exception:
-        value = None
-    if not value:
-        raise RuntimeError(
-            f"Kaggle secret {name!r} is missing or not attached to this notebook. Add it under "
-            f"Add-ons > Secrets with the label {name}, tick it for this notebook, then re-run."
-        )
-    return value
 
 
 def installed_commit(dist: str = "tollgate") -> str | None:

@@ -73,11 +73,11 @@ def _tokens(text: str) -> int:
 
 
 def _price(model: ModelConfig) -> tuple[float, float] | None:
-    """USD per (prompt, completion) token: configured prices, else litellm's table, else None."""
-    if model.local:
-        return 0.0, 0.0
+    """USD per (prompt, completion) token: configured prices, local $0, litellm's table, None."""
     if model.usd_per_mtok_in is not None and model.usd_per_mtok_out is not None:
         return model.usd_per_mtok_in / 1e6, model.usd_per_mtok_out / 1e6
+    if model.local:
+        return 0.0, 0.0
     try:
         import litellm
 
@@ -473,6 +473,9 @@ def collect_all(
     limit: Annotated[int, typer.Option(help="First N seed prompts.")] = DEFAULT_LIMIT,
     yes: Annotated[bool, typer.Option("--yes", help="Make the paid calls estimated.")] = False,
     concurrency: Annotated[int, typer.Option(min=1, help="In-flight hosted calls.")] = 4,
+    local_concurrency: Annotated[
+        int, typer.Option(min=1, help="In-flight Ollama calls (match OLLAMA_NUM_PARALLEL).")
+    ] = 1,
     sources: Annotated[str, typer.Option(help="Seed sources, comma list.")] = ",".join(SOURCES),
     split_seed: Annotated[int, typer.Option(help="Seed for the stratified split.")] = 0,
 ) -> None:
@@ -482,7 +485,7 @@ def collect_all(
     tiers, judge_model = _configs()
     seed = ensure_seed(limit, [s.strip() for s in sources.split(",") if s.strip()])
     records = load_records(seed, limit)
-    runner = Runner(RunnerConfig(concurrency=concurrency))
+    runner = Runner(RunnerConfig(concurrency=concurrency, local_concurrency=local_concurrency))
     confirm_or_exit(estimate(records, tiers, judge_model, runner.config), yes)
     check_local_models([*tiers, judge_model])
     before = ledger_totals(paths.ledger_path())
@@ -500,6 +503,9 @@ def judge_cmd(
     limit: Annotated[int, typer.Option(help="First N seed prompts.")] = DEFAULT_LIMIT,
     yes: Annotated[bool, typer.Option("--yes", help="Make the paid calls estimated.")] = False,
     concurrency: Annotated[int, typer.Option(min=1, help="In-flight judge calls.")] = 4,
+    local_concurrency: Annotated[
+        int, typer.Option(min=1, help="In-flight Ollama calls (match OLLAMA_NUM_PARALLEL).")
+    ] = 1,
 ) -> None:
     """Judge existing tier runs of the first --limit seed prompts into verdicts.jsonl."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -519,7 +525,7 @@ def judge_cmd(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from None
-    runner = Runner(RunnerConfig(concurrency=concurrency))
+    runner = Runner(RunnerConfig(concurrency=concurrency, local_concurrency=local_concurrency))
     confirm_or_exit(estimate(records, [], judge_model, runner.config, runs=runs), yes)
     check_local_models([judge_model])
     before = ledger_totals(paths.ledger_path())

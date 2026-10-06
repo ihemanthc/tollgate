@@ -280,3 +280,14 @@ def test_quiet_http_logs() -> None:
     quiet_http_logs()
     assert logging.getLogger("LiteLLM").level == logging.WARNING
     assert logging.getLogger("openai").level == logging.WARNING
+
+
+def test_progress_logs_about_every_five_percent(caplog: pytest.LogCaptureFixture) -> None:
+    progress = runner_mod.Progress("tier runs", 45)
+    with caplog.at_level("INFO", logger=runner_mod.log.name):
+        for _ in range(45):
+            progress.step()
+    lines = [r.getMessage() for r in caplog.records]
+    # every round(45 * 0.05) = 2 steps, plus the last one
+    assert len(lines) == 23
+    assert lines[0].startswith("tier runs: 2/45") and lines[-1].startswith("tier runs: 45/45")

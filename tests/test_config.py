@@ -72,6 +72,27 @@ def test_unpriced_is_none_and_local_is_free(monkeypatch: pytest.MonkeyPatch) -> 
     assert config.tier_config(Tier.LOCAL_SMALL).price(1000, 1000) == 0.0
 
 
+def test_ollama_tiers_are_local_and_free_unless_priced(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TOLLGATE_MID_TIER_MODEL", "ollama/qwen2.5:14b")
+    monkeypatch.setenv("TOLLGATE_FRONTIER_MODEL", "ollama_chat/qwen2.5:32b")
+    monkeypatch.setenv("OLLAMA_API_BASE", "http://127.0.0.1:11434")
+    monkeypatch.setenv("TOLLGATE_FRONTIER_USD_PER_MTOK_IN", "0.8")
+    monkeypatch.setenv("TOLLGATE_FRONTIER_USD_PER_MTOK_OUT", "0.8")
+    mid, frontier = config.tier_config(Tier.MID_TIER), config.tier_config(Tier.FRONTIER)
+    assert (mid.local, mid.api_base) == (True, "http://127.0.0.1:11434")
+    assert mid.price(1000, 1000) == 0.0
+    # A reference price for what a hosted provider charges for the same model.
+    assert frontier.local and frontier.price(1000, 1000) == pytest.approx(0.0016)
+
+
+def test_ollama_judge_takes_prices_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TOLLGATE_JUDGE_MODEL", "ollama/mistral-small:24b")
+    monkeypatch.setenv("TOLLGATE_JUDGE_USD_PER_MTOK_IN", "1")
+    monkeypatch.setenv("TOLLGATE_JUDGE_USD_PER_MTOK_OUT", "1")
+    judge = config.judge_config()
+    assert judge.local and judge.price(500, 500) == pytest.approx(0.001)
+
+
 @pytest.mark.parametrize(
     ("price_in", "price_out", "match"),
     [("1.0", "", "or neither"), ("", "1.0", "or neither"), ("cheap", "1.0", "not a number")],

@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-from tollgate.collect.runner import Runner
+from tollgate.collect.runner import Progress, Runner
 from tollgate.config import ModelConfig
 from tollgate.schema import JudgeVerdict, QueryRecord, Tier, TierRun, Verdict
 
@@ -193,9 +193,14 @@ async def judge_all(
     by_query: dict[str, list[TierRun]] = defaultdict(list)
     for run in runs:
         by_query[run.query_id].append(run)
-    per_query = await asyncio.gather(
-        *(judge_query(runner, judge_model, r, by_query.get(r.query_id, [])) for r in records)
-    )
+    progress = Progress("judged queries", len(records))
+
+    async def one(record: QueryRecord) -> list[JudgeVerdict]:
+        verdicts = await judge_query(runner, judge_model, record, by_query.get(record.query_id, []))
+        progress.step()
+        return verdicts
+
+    per_query = await asyncio.gather(*(one(r) for r in records))
     verdicts = [v for vs in per_query for v in vs]
     expected = sum(judgeable_pairs(by_query.get(r.query_id, [])) for r in records)
     return verdicts, expected - len(verdicts)

@@ -2,12 +2,16 @@
 
 local_small is a fixed Ollama model; mid_tier, frontier and the judge are litellm model
 strings taken from TOLLGATE_{MID_TIER,FRONTIER,JUDGE}_MODEL so swapping providers needs no code.
+Any of them may be an `ollama/<tag>` model too (kaggle_collect.ipynb serves every role from
+Ollama on the GPU); those go to OLLAMA_API_BASE and need no confirmation to run.
 
 OpenAI-compatible providers: an `openai/<name>` model is sent to OPENAI_API_BASE (or
 OPENAI_BASE_URL) and litellm reads OPENAI_API_KEY. Any role can override both with
 TOLLGATE_<ROLE>_API_BASE / TOLLGATE_<ROLE>_API_KEY. litellm has no prices for most such models, so
 set TOLLGATE_<ROLE>_USD_PER_MTOK_IN / _OUT (USD per million prompt / completion tokens), or the
-cost ledger records $0 for every call. All of these may live in a gitignored .env (load_env).
+cost ledger records $0 for every call. An Ollama role is $0 unless the same variables are set: they
+then price it at what a hosted provider charges for that model, so the cost curve reflects what
+routing would save in production. All of these may live in a gitignored .env (load_env).
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ MODEL_ENV_VARS: dict[Tier, str] = {
 JUDGE_MODEL_ENV = "TOLLGATE_JUDGE_MODEL"
 OLLAMA_BASE_ENV = "OLLAMA_API_BASE"
 DEFAULT_OLLAMA_BASE = "http://localhost:11434"
+OLLAMA_PREFIXES = ("ollama/", "ollama_chat/")
 ROLE_PREFIXES: dict[str, str] = {
     Tier.MID_TIER.value: "TOLLGATE_MID_TIER",
     Tier.FRONTIER.value: "TOLLGATE_FRONTIER",
@@ -50,16 +55,17 @@ class ModelConfig(BaseModel):
     model: str = Field(description="litellm model string, e.g. 'ollama/qwen2.5:7b'.")
     api_base: str | None = None
     api_key: str | None = Field(default=None, repr=False)
-    local: bool = Field(default=False, description="Local models are always costed at $0.")
+    local: bool = Field(
+        default=False,
+        description="Served by Ollama: needs no confirmation and is $0 unless prices are set.",
+    )
     usd_per_mtok_in: float | None = Field(default=None, ge=0.0)
     usd_per_mtok_out: float | None = Field(default=None, ge=0.0)
 
     def price(self, prompt_tokens: int, completion_tokens: int) -> float | None:
-        """USD from configured prices (local is free); None when no price is configured."""
-        if self.local:
-            return 0.0
+        """USD from configured prices; else $0 for a local model; else None (unpriced)."""
         if self.usd_per_mtok_in is None or self.usd_per_mtok_out is None:
-            return None
+            return 0.0 if self.local else None
         return (
             prompt_tokens * self.usd_per_mtok_in + completion_tokens * self.usd_per_mtok_out
         ) / 1e6
@@ -127,31 +133,40 @@ def _price(var: str) -> float | None:
         raise ValueError(f"{var}={raw!r} is not a number (USD per million tokens)") from None
 
 
-def _hosted(role: str, model: str) -> dict[str, object]:
-    """Endpoint, key and prices for a hosted role: per-role variables, then the shared ones."""
-    prefix = ROLE_PREFIXES[role]
-    api_base = _env(f"{prefix}_API_BASE")
-    if api_base is None and model.startswith("openai/"):
-        api_base = next((v for v in map(_env, OPENAI_BASE_ENVS) if v), None)
+def _prices(prefix: str) -> dict[str, float | None]:
     price_in, price_out = _price(f"{prefix}_USD_PER_MTOK_IN"), _price(f"{prefix}_USD_PER_MTOK_OUT")
     if (price_in is None) != (price_out is None):
         raise ValueError(f"set both {prefix}_USD_PER_MTOK_IN and _OUT, or neither")
+    return {"usd_per_mtok_in": price_in, "usd_per_mtok_out": price_out}
+
+
+def _role(role: str, model: str) -> dict[str, object]:
+    """Endpoint, key and prices for a configurable role.
+
+    Ollama models go to OLLAMA_API_BASE. Hosted ones use per-role variables, then shared ones.
+    """
+    prefix = ROLE_PREFIXES[role]
+    if model.startswith(OLLAMA_PREFIXES):
+        return {
+            "model": model,
+            "api_base": os.environ.get(OLLAMA_BASE_ENV, DEFAULT_OLLAMA_BASE),
+            "local": True,
+            **_prices(prefix),
+        }
+    api_base = _env(f"{prefix}_API_BASE")
+    if api_base is None and model.startswith("openai/"):
+        api_base = next((v for v in map(_env, OPENAI_BASE_ENVS) if v), None)
     return {
         "model": model,
         "api_base": api_base,
         "api_key": _env(f"{prefix}_API_KEY"),
-        "usd_per_mtok_in": price_in,
-        "usd_per_mtok_out": price_out,
+        **_prices(prefix),
     }
 
 
 def judge_config() -> ModelConfig:
     model = _required_env(JUDGE_MODEL_ENV, "the judge")
-    if model.startswith(("ollama/", "ollama_chat/")):
-        return ModelConfig(
-            model=model, api_base=os.environ.get(OLLAMA_BASE_ENV, DEFAULT_OLLAMA_BASE), local=True
-        )
-    return ModelConfig.model_validate(_hosted("judge", model))
+    return ModelConfig.model_validate(_role("judge", model))
 
 
 def tier_config(tier: Tier) -> TierConfig:
@@ -164,7 +179,7 @@ def tier_config(tier: Tier) -> TierConfig:
             local=True,
         )
     model = _required_env(MODEL_ENV_VARS[tier], tier.value)
-    return TierConfig.model_validate({"tier": tier, **_hosted(tier.value, model)})
+    return TierConfig.model_validate({"tier": tier, **_role(tier.value, model)})
 
 
 def hf_repo_model() -> str:

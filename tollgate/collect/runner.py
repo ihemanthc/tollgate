@@ -84,6 +84,31 @@ class LedgerEntry(TollgateModel):
     latency_ms: float = Field(ge=0.0)
 
 
+class Progress:
+    """Logs `done/total` about every 5% of a long batch: a GPU stage can run for hours."""
+
+    def __init__(self, what: str, total: int, every: float = 0.05) -> None:
+        self.what, self.total, self.done = what, total, 0
+        self._every = max(1, round(total * every))
+        self._started = time.perf_counter()
+
+    def step(self) -> None:
+        self.done += 1
+        if self.done % self._every and self.done != self.total:
+            return
+        elapsed = time.perf_counter() - self._started
+        eta = elapsed / self.done * (self.total - self.done)
+        log.info(
+            "%s: %d/%d (%.0f%%), %.0f min elapsed, ~%.0f min left",
+            self.what,
+            self.done,
+            self.total,
+            100 * self.done / self.total,
+            elapsed / 60,
+            eta / 60,
+        )
+
+
 def cache_key(prompt: str, model: str) -> str:
     # NUL separator so (prompt, model) pairs can't collide by concatenation.
     return hashlib.sha256(f"{prompt}\x00{model}".encode()).hexdigest()
@@ -183,7 +208,14 @@ class Runner:
         self, records: Sequence[QueryRecord], tiers: Sequence[TierConfig]
     ) -> list[TierRun]:
         """All (record, tier) pairs, concurrently; results in record-major, tier-minor order."""
-        return list(await asyncio.gather(*(self.run(r, t) for r in records for t in tiers)))
+        progress = Progress("tier runs", len(records) * len(tiers))
+
+        async def one(record: QueryRecord, tier: TierConfig) -> TierRun:
+            run = await self.run(record, tier)
+            progress.step()
+            return run
+
+        return list(await asyncio.gather(*(one(r, t) for r in records for t in tiers)))
 
     async def _call_with_retry(
         self, prompt: str, model: ModelConfig, json_mode: bool
@@ -346,6 +378,9 @@ def run_tiers(
     limit: Annotated[int, typer.Option(help="Number of seed prompts to run.")] = DEFAULT_LIMIT,
     tiers: Annotated[str, typer.Option(help="'all' or comma list of tiers.")] = "all",
     concurrency: Annotated[int, typer.Option(min=1, help="Max in-flight calls.")] = 4,
+    local_concurrency: Annotated[
+        int, typer.Option(min=1, help="In-flight Ollama calls (match OLLAMA_NUM_PARALLEL).")
+    ] = 1,
     yes: Annotated[bool, typer.Option("--yes", help="Make the paid calls estimated.")] = False,
     seed: Annotated[
         Path | None, typer.Option(help="Seed prompts. [default: <data dir>/seed.parquet]")
@@ -365,7 +400,7 @@ def run_tiers(
             param_hint="--seed",
         )
     records = load_records(seed, limit)
-    runner = Runner(RunnerConfig(concurrency=concurrency))
+    runner = Runner(RunnerConfig(concurrency=concurrency, local_concurrency=local_concurrency))
     from tollgate.collect.pipeline import check_local_models, confirm_or_exit, estimate
 
     confirm_or_exit(estimate(records, tier_cfgs, None, runner.config), yes)

@@ -277,6 +277,9 @@ def test_configured_prices_beat_the_price_table() -> None:
     priced = M.model_copy(update={"usd_per_mtok_in": 1.0, "usd_per_mtok_out": 4.0})
     assert REAL_PRICE(priced) == (1e-6, 4e-6)
     assert REAL_PRICE(L) == (0.0, 0.0)
+    # A local model priced at a hosted rate is costed at that rate, yet runs without --yes.
+    shadow = L.model_copy(update={"usd_per_mtok_in": 0.5, "usd_per_mtok_out": 2.0})
+    assert REAL_PRICE(shadow) == (5e-7, 2e-6)
 
 
 # --- canary and unpriced refusal ----------------------------------------------------------------

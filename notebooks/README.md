@@ -1,7 +1,11 @@
 # Notebooks
 
-`kaggle_train.ipynb` fine-tunes the Laya router on a Kaggle GPU. It also scores the calibration
-and test splits so that calibration and every metric run afterwards on a CPU.
+Two Kaggle notebooks, run in this order:
+
+1. `kaggle_collect.ipynb` builds the labelled dataset with open models served by Ollama on the
+   GPUs, then publishes it to the Hub. It needs no LLM API key and nothing on your machine.
+2. `kaggle_train.ipynb` fine-tunes the Laya router on that dataset. It also scores the
+   calibration and test splits so that calibration and every metric run afterwards on a CPU.
 
 Notebooks here are generated. Edit `scripts/make_notebook.py` and run
 `uv run python scripts/make_notebook.py`; never edit an `.ipynb` by hand. A test fails if a
@@ -11,17 +15,56 @@ committed notebook is out of date.
 
 1. **Push this repo to GitHub.** The notebook installs it with pip from `REPO_URL`. A private
    repo works too: see step 5.
-2. **Publish the dataset to the Hub.** On your machine, after `tollgate collect-all`:
-   ```
-   uv run tollgate push-dataset          # stages files for review
-   uv run tollgate push-dataset --yes    # uploads to the private HF_REPO_DATA repo
-   ```
+2. **Build and publish the dataset** with `kaggle_collect.ipynb` (next section). It uploads
+   to the private `HF_REPO_DATA` repo, which `kaggle_train.ipynb` pulls from.
 3. **Use a Hugging Face token with write access**
    (https://huggingface.co/settings/tokens). The notebook uses it to pull the dataset, push the
    run, and rebuild LMSYS-Chat-1M text. The account behind the token must have accepted the
    [LMSYS-Chat-1M license](https://huggingface.co/datasets/lmsys/lmsys-chat-1m): the dataset on
    the Hub carries only hashes for those rows, so the notebook rebuilds their text from the
    official source under that account's access.
+
+## Building the dataset: `kaggle_collect.ipynb`
+
+Every role is an open model that Ollama serves on the two T4s:
+
+| Role | Default model | Why this one |
+|---|---|---|
+| `local_small` | `qwen2.5:7b` (fixed) | The model the router serves locally, so the labels describe it |
+| `mid_tier` | `qwen2.5:14b` | Same family, twice the size |
+| `frontier` | `qwen2.5:32b` | About the largest model that fits on 2x T4, split across both |
+| judge | `mistral-small:24b` | Not the frontier model, and from another family than the candidates |
+
+Two T4s cannot hold all four at once, so the notebook pulls one model, answers every prompt with
+it, deletes it, and moves on. The judge comes last and compares each cheaper answer with the
+frontier one. Change `MODELS` in the settings cell to use other Ollama tags. `local_small` lives
+in `tollgate.config.LOCAL_SMALL_MODEL`, because serving uses it too.
+
+Labels describe these models. The router then picks between *these* tiers, so serving has to
+route to the same `mid_tier` and `frontier` models, or the dataset has to be rebuilt.
+
+**Costs.** Ollama calls are $0 unless you set `PRICES`: the USD per million input and output
+tokens that a hosted provider charges for the same model. Set them **before** the run if you want
+a meaningful cost curve, because every cost in the dataset is fixed at the moment each call is
+made, and cached answers are never repriced.
+
+**Setup** is the same as for training below (GPU T4 x2, Internet on, an `HF_TOKEN` secret with
+write access, `GITHUB_TOKEN` for a private repo). The same LMSYS-Chat-1M license acceptance is
+needed, because the seed streams from it. Drop `lmsys-chat-1m` from `SOURCES` to avoid that.
+
+**Running it.** Use **Save Version > Save & Run All (Commit)**. Collection state stays in
+`/kaggle/working/data`: the answer cache, the cost ledger, tier runs and verdicts. The seed
+prompts are deleted at the end because their source text may not be redistributed. Ollama's
+log is written to `/kaggle/working/data/ollama.log`.
+
+- **If a session ends early,** add the saved version's output as input (**Add Input > Your Work**)
+  and set `RESUME_FROM` to its `data/` folder. Every finished call is a cache hit, so only
+  unanswered prompts are run.
+- **If some calls fail,** that tier keeps its weights, and step 6 retries only the failed
+  prompts. Re-running a cell never repeats a finished call.
+- **Keep the notebook private.** Its output holds model answers to LMSYS-Chat-1M prompts.
+- **Scaling up.** Raise `LIMIT` and run again with `RESUME_FROM` set. The first prompts are
+  the same ones, so they come from the cache.
 
 ## Kaggle setup
 
