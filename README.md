@@ -8,7 +8,6 @@ Route each LLM query to the cheapest model tier that answers it acceptably, with
 <p>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2F80ED?style=flat-square"></a>
   <a href="https://www.python.org/downloads/"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white"></a>
-  <a href="https://github.com/ihemanthc/tollgate/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ihemanthc/tollgate/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI"></a>
   <a href="https://huggingface.co/ihemanthc/tollgate-router/tree/fbc8a5b147524113a5a69b0db26e7d7812505bda"><img alt="Model revision fbc8a5b" src="https://img.shields.io/badge/model-tollgate--router%20%40%20fbc8a5b-FFD21E?style=flat-square&logo=huggingface&logoColor=black"></a>
   <a href="https://huggingface.co/convaiinnovations/laya/tree/55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"><img alt="Base model: Laya 55cf4c4" src="https://img.shields.io/badge/base-laya%20%40%2055cf4c4-FFD21E?style=flat-square&logo=huggingface&logoColor=black"></a>
   <a href="https://docs.astral.sh/ruff/"><img alt="Code style: ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square"></a>
@@ -22,9 +21,13 @@ Tollgate fine-tunes the [Laya](https://huggingface.co/convaiinnovations/laya) en
 
 The router produces calibrated probabilities over these tiers. A confidence threshold determines when Tollgate can safely serve a query at the predicted tier and when it should escalate to a more capable tier.
 
+<img width="1280" height="720" alt="1" src="https://github.com/user-attachments/assets/112ce0df-b2da-4ea6-bb43-dd9de2086217" />
+
+
 The project is designed around one objective:
 
 > **Reduce LLM inference cost while retaining acceptable answer quality.**
+
 
 ---
 
@@ -255,26 +258,6 @@ Seed sources include:
 - GSM8K
 - MMLU
 
-For each query:
-
-```text
-Seed prompt
-    |
-    v
-Local-small answer
-    |
-    v
-Mid-tier answer
-    |
-    v
-Frontier answer
-    |
-    v
-LLM judge
-    |
-    v
-Minimum sufficient tier
-```
 
 The dataset also records routing metadata and model cost information.
 
